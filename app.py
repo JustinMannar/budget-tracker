@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+import analytics
 import db
 
 st.set_page_config(page_title="Budget Tracker", layout="wide")
@@ -60,8 +61,8 @@ c1.metric("Income", f"${income:,.0f}")
 c2.metric("Spending", f"${cur['spent'].sum():,.0f}")
 c3.metric("Net", f"${income - cur['spent'].sum():,.0f}")
 
-tab1, tab2, tab3, tab4 = st.tabs(
-    ["Overview", "Budget vs actual", "Merchants", "Transactions"]
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+    ["Overview", "Budget vs actual", "Merchants", "Recurring", "Anomalies", "Transactions"]
 )
 
 with tab1:
@@ -107,6 +108,25 @@ with tab3:
     )
 
 with tab4:
+    rec = analytics.detect_recurring(conn)
+    if rec.empty:
+        st.info("No recurring charges detected yet (needs 3+ steady charges).")
+    else:
+        r1, r2 = st.columns(2)
+        r1.metric("Recurring charges found", len(rec))
+        r2.metric("Committed per month", f"${rec['monthly_cost'].sum():,.2f}")
+        st.dataframe(rec, hide_index=True, use_container_width=True)
+
+with tab5:
+    sens = st.slider("Sensitivity (lower = flags more)", 2.5, 6.0, 3.5, 0.5)
+    anom = analytics.detect_anomalies(df, threshold=sens)
+    if anom.empty:
+        st.success("No unusual transactions at this sensitivity.")
+    else:
+        st.caption(f"{len(anom)} unusual transactions, largest deviation first")
+        st.dataframe(anom, hide_index=True, use_container_width=True)
+
+with tab6:
     unc = df[df["category"] == "Uncategorized"]
     if not unc.empty:
         st.warning(f"{len(unc)} uncategorized transactions")
