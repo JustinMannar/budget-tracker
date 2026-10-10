@@ -1,0 +1,17 @@
+# Local data - never commit real financial data
+budget.db
+*.db
+real_*.csv
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
