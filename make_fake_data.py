@@ -1,6 +1,6 @@
-"""Generate ~6 months of realistic fake transactions into sample_transactions.csv."""
+"""Generate 24 months of realistic fake transactions into sample_transactions.csv."""
 import random
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -26,19 +26,25 @@ MONTHLY_FIXED = [
 ]
 
 
-def main(months: int = 6) -> None:
+def main(months: int = 24) -> None:
     rows = []
-    start = date.today().replace(day=1)
+    this_month = pd.Period(date.today(), freq="M")
     for m in range(months):
-        first = (start - timedelta(days=30 * m)).replace(day=1)
+        period = this_month - m
+        first = period.start_time.date()
+        age = months - 1 - m                      # 0 = oldest month
+        inflation = 1 + 0.004 * age               # prices creep up ~0.4%/month
+        holiday = 1.6 if period.month == 12 else 1.0
         for desc, amt, day in MONTHLY_FIXED:
             rows.append((first.replace(day=day), desc, amt))
         for pay_day in (1, 15):
             rows.append((first.replace(day=pay_day), "ACME CORP PAYROLL", 2150.00))
         for desc, lo, hi, freq in SPENDING:
+            bump = holiday if desc.startswith(("AMAZON", "TARGET")) else 1.0
             for _ in range(random.randint(max(freq - 1, 0), freq + 1)):
                 d = first.replace(day=random.randint(1, 28))
-                rows.append((d, desc, -round(random.uniform(lo, hi), 2)))
+                amount = random.uniform(lo, hi) * inflation * bump
+                rows.append((d, desc, -round(amount, 2)))
     df = pd.DataFrame(rows, columns=["date", "description", "amount"])
     df = df[df["date"] <= date.today()].sort_values("date")
     df.to_csv(OUT, index=False)

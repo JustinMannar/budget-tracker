@@ -1,10 +1,12 @@
 """Streamlit budget dashboard. Run: streamlit run app.py"""
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 import analytics
 import db
+import forecast
 
 st.set_page_config(page_title="Budget Tracker", layout="wide")
 
@@ -61,8 +63,9 @@ c1.metric("Income", f"${income:,.0f}")
 c2.metric("Spending", f"${cur['spent'].sum():,.0f}")
 c3.metric("Net", f"${income - cur['spent'].sum():,.0f}")
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-    ["Overview", "Budget vs actual", "Merchants", "Recurring", "Anomalies", "Transactions"]
+tab1, tab2, tab3, tab4, tab5, tab7, tab6 = st.tabs(
+    ["Overview", "Budget vs actual", "Merchants", "Recurring", "Anomalies", "Forecast",
+     "Transactions"]
 )
 
 with tab1:
@@ -125,6 +128,53 @@ with tab5:
     else:
         st.caption(f"{len(anom)} unusual transactions, largest deviation first")
         st.dataframe(anom, hide_index=True, use_container_width=True)
+
+with tab7:
+    hist = forecast.monthly_spending(df)
+    res = forecast.run_forecast(hist)
+    if res is None:
+        st.info("Need at least 4 complete months of history to forecast.")
+    else:
+        next_month = hist.index[-1] + 1
+        f1, f2, f3 = st.columns(3)
+        f1.metric(f"Forecast for {next_month}", f"${res.forecast:,.0f}")
+        f2.metric("80% range", f"${res.lower:,.0f} – ${res.upper:,.0f}")
+        best = res.table.iloc[0]
+        f3.metric("Beats 'same as last month' by", f"{best['vs naive %']:.0f}%")
+        if res.low_confidence:
+            st.warning(f"Only {res.n_backtest} backtest months: treat this as a rough guess.")
+        st.caption(f"Best model in backtest: **{res.model}** "
+                   f"(scored on {res.n_backtest} months it had never seen)")
+
+        fig = go.Figure()
+        x_hist = [str(p) for p in hist.index]
+        fig.add_scatter(x=x_hist, y=hist.values, mode="lines+markers", name="Actual")
+        fig.add_scatter(
+            x=[str(next_month)], y=[res.forecast], mode="markers", name="Forecast",
+            marker=dict(size=12, color="#d62728"),
+            error_y=dict(type="data", symmetric=False,
+                         array=[res.upper - res.forecast],
+                         arrayminus=[res.forecast - res.lower]),
+        )
+        fig.update_layout(title="Monthly spending and next-month forecast",
+                          yaxis_title="Spending ($)")
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("How each model did in the backtest")
+        st.dataframe(res.table.round(1), hide_index=True, use_container_width=True)
+        st.caption("MAE = average dollars off. 'vs naive' = how much smaller the error is "
+                   "than just guessing last month's number. Negative means worse.")
+
+        st.subheader("By category")
+        by_cat = forecast.monthly_spending(df, by_category=True)
+        rows = []
+        for cat in by_cat.columns:
+            r = forecast.run_forecast(by_cat[cat])
+            if r is not None and by_cat[cat].sum() > 0:
+                rows.append({"category": cat, "forecast": round(r.forecast, 0),
+                             "model": r.model, "vs naive %": round(r.table.iloc[0]["vs naive %"])})
+        st.dataframe(pd.DataFrame(rows).sort_values("forecast", ascending=False),
+                     hide_index=True, use_container_width=True)
 
 with tab6:
     unc = df[df["category"] == "Uncategorized"]
